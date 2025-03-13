@@ -48,6 +48,57 @@ func (s *Storage) Type(key string) string {
 	}
 }
 
+func (s *Storage) LPush(key string, values ...any) (int, error) {
+	val, _ := s.items.Load(key)
+	var list []any
+
+	if val != nil {
+		switch v := val.(type) {
+		case []any:
+			list = v
+		default:
+			return s.Count(), fmt.Errorf("ERR value is not a list")
+		}
+	}
+
+	list = append(values, list...)
+	s.items.Store(key, list)
+
+	return s.Count(), nil
+}
+
+func (s *Storage) RPop(key string) (any, error) {
+	val, ok := s.items.Load(key)
+	if !ok {
+		return nil, fmt.Errorf("ERR no such key")
+	}
+
+	list, ok := val.([]any)
+	if !ok {
+		return nil, fmt.Errorf("ERR value is not a list")
+	}
+
+	if len(list) == 0 {
+		return nil, fmt.Errorf("ERR list is empty")
+	}
+
+	lastElement := list[len(list)-1]
+	list = list[:len(list)-1]
+	s.items.Store(key, list)
+
+	return lastElement, nil
+}
+
+func (s *Storage) Count() int {
+	length := 0
+	s.items.Range(func(_, _ any) bool {
+		length++
+		return true
+	})
+
+	return length
+}
+
 func (s *Storage) Incr(key string) (int, error) {
 	val, ok := s.items.Load(key)
 	if !ok {

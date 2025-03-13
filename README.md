@@ -9,6 +9,8 @@ Arithmo is a simple in-memory key-value store written in Go. It supports basic o
 - Check existence of keys
 - Delete keys
 - Determine the type of stored values
+- Push values to a list
+- Pop values from a list
 
 ## Installation
 
@@ -43,6 +45,8 @@ The server will start on port `6379`.
 - `TYPE key` - Get the type of the value stored at key
 - `DEL key` - Delete a key
 - `EXISTS key` - Check if a key exists
+- `LPUSH key value [value ...]` - Push values to the head of a list
+- `RPOP key` - Pop the last value from a list
 - `QUIT` - Close the connection
 
 ## License

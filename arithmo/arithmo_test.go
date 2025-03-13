@@ -108,3 +108,56 @@ func TestStorageDecr(t *testing.T) {
 		t.Errorf("expected error, got nil")
 	}
 }
+
+func TestStorageLPush(t *testing.T) {
+	storage := &arithmo.Storage{}
+	storage.LPush("key1", "value1", "value2")
+
+	val, ok := storage.Get("key1")
+	if !ok {
+		t.Errorf("expected true, got false")
+	}
+
+	list, ok := val.([]any)
+	if !ok || len(list) != 2 || list[0] != "value2" || list[1] != "value1" {
+		t.Errorf("expected [value2 value1], got %v", list)
+	}
+}
+
+func TestStorageCount(t *testing.T) {
+	storage := &arithmo.Storage{}
+	storage.Set("key1", "value1")
+	storage.Set("key2", "value2")
+
+	count := storage.Count()
+	if count != 2 {
+		t.Errorf("expected 2, got %v", count)
+	}
+}
+func TestStorageRPop(t *testing.T) {
+	storage := &arithmo.Storage{}
+	storage.LPush("key1", "value1", "value2")
+
+	val, err := storage.RPop("key1")
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+
+	if val != "value1" {
+		t.Errorf("expected value1, got %v", val)
+	}
+
+	val, err = storage.RPop("key1")
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+
+	if val != "value2" {
+		t.Errorf("expected value2, got %v", val)
+	}
+
+	_, err = storage.RPop("key1")
+	if err == nil {
+		t.Errorf("expected error, got nil")
+	}
+}

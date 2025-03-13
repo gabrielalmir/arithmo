@@ -1,121 +1,161 @@
 package router
 
 import (
-	"bufio"
-	"bytes"
 	"fmt"
 	"net"
 	"strconv"
 	"strings"
 
 	"github.com/gabrielalmir/arithmo/arithmo"
+	"github.com/tidwall/resp"
 )
 
 func HandleConnection(conn net.Conn, storage *arithmo.Storage) {
 	defer conn.Close()
-	reader := bufio.NewReader(conn)
+	rd := resp.NewReader(conn)
+	wr := resp.NewWriter(conn)
 
 	for {
-		line, err := reader.ReadBytes('\n')
+		val, _, err := rd.ReadValue()
 		if err != nil {
-			fmt.Println("Error reading from connection:", err)
+			fmt.Println("Erro ao ler comando:", err)
 			return
 		}
 
-		line = bytes.TrimSpace(line)
-		if len(line) == 0 {
+		if val.Type() != resp.Array {
+			wr.WriteError(fmt.Errorf("ERR comando deve ser um array"))
 			continue
 		}
 
-		parts := strings.Fields(string(line))
-		if len(parts) < 1 {
+		args := val.Array()
+
+		if len(args) < 1 {
+			wr.WriteError(fmt.Errorf("ERR comando vazio"))
 			continue
 		}
 
-		command := strings.ToUpper(parts[0])
-		args := parts[1:]
+		cmdName := strings.ToUpper(args[0].String())
+		args = args[1:]
 
-		switch command {
+		switch cmdName {
 		case "SET":
 			if len(args) != 2 {
-				fmt.Fprintln(conn, "-ERR wrong number of arguments for 'SET' command")
+				wr.WriteError(fmt.Errorf("ERR wrong number of arguments for 'SET' command"))
 				continue
 			}
-			if val, err := strconv.Atoi(args[1]); err == nil {
-				storage.Set(args[0], val)
+
+			if val, err := strconv.Atoi(args[1].String()); err == nil {
+				storage.Set(args[0].String(), val)
 			} else {
-				storage.Set(args[0], args[1])
+				storage.Set(args[0].String(), args[1].String())
 			}
-			fmt.Fprintln(conn, "+OK")
+
+			wr.WriteSimpleString("OK")
 
 		case "GET":
 			if len(args) != 1 {
-				fmt.Fprintln(conn, "-ERR wrong number of arguments for 'GET' command")
+				wr.WriteError(fmt.Errorf("ERR wrong number of arguments for 'GET' command"))
 				continue
 			}
-			val, ok := storage.Get(args[0])
+			val, ok := storage.Get(args[0].String())
 			if !ok {
-				fmt.Fprintln(conn, "$-1")
+				wr.WriteNull()
 				continue
 			}
-			fmt.Fprintf(conn, "$%d\r\n%s\r\n", len(fmt.Sprint(val)), val)
+			wr.WriteString(fmt.Sprintf("%v", val))
 
 		case "INCR":
 			if len(args) != 1 {
-				fmt.Fprintln(conn, "-ERR wrong number of arguments for 'INCR' command")
+				wr.WriteError(fmt.Errorf("ERR wrong number of arguments for 'INCR' command"))
 				continue
 			}
-			newVal, err := storage.Incr(args[0])
+			newVal, err := storage.Incr(args[0].String())
 			if err != nil {
-				fmt.Fprintln(conn, "-"+err.Error())
+				wr.WriteError(err)
 				continue
 			}
-			fmt.Fprintln(conn, ":", newVal)
+			wr.WriteInteger(newVal)
 
 		case "DECR":
 			if len(args) != 1 {
-				fmt.Fprintln(conn, "-ERR wrong number of arguments for 'DECR' command")
+				wr.WriteError(fmt.Errorf("ERR wrong number of arguments for 'DECR' command"))
 				continue
 			}
-			newVal, err := storage.Decr(args[0])
+			newVal, err := storage.Decr(args[0].String())
 			if err != nil {
-				fmt.Fprintln(conn, "-"+err.Error())
+				wr.WriteError(err)
 				continue
 			}
-			fmt.Fprintln(conn, ":", newVal)
+			wr.WriteInteger(newVal)
+
+		case "LPUSH":
+			if len(args) < 2 {
+				wr.WriteError(fmt.Errorf("ERR wrong number of arguments for 'LPUSH' command"))
+				continue
+			}
+			key := args[0].String()
+			values := make([]interface{}, len(args)-1)
+			for i, v := range args[1:] {
+				values[i] = v.String()
+			}
+			newLen, err := storage.LPush(key, values...)
+			if err != nil {
+				wr.WriteError(err)
+				continue
+			}
+			wr.WriteInteger(newLen)
+
+		case "RPOP":
+			if len(args) != 1 {
+				wr.WriteError(fmt.Errorf("ERR wrong number of arguments for 'RPOP' command"))
+				continue
+			}
+			val, err := storage.RPop(args[0].String())
+			if err != nil {
+				wr.WriteError(err)
+				continue
+			}
+			wr.WriteString(fmt.Sprintf("%v", val))
 
 		case "TYPE":
 			if len(args) != 1 {
-				fmt.Fprintln(conn, "-ERR wrong number of arguments for 'TYPE' command")
+				wr.WriteError(fmt.Errorf("ERR wrong number of arguments for 'TYPE' command"))
 				continue
 			}
-			fmt.Fprintln(conn, "+", storage.Type(args[0]))
+			wr.WriteSimpleString(storage.Type(args[0].String()))
 
-		case "DEL", "EXISTS":
+		case "DEL":
 			if len(args) < 1 {
-				fmt.Fprintln(conn, "-ERR wrong number of arguments for '"+command+"' command")
+				wr.WriteError(fmt.Errorf("ERR wrong number of arguments for 'DEL' command"))
 				continue
 			}
 			count := 0
 			for _, key := range args {
-				if command == "DEL" {
-					if storage.Del(key) {
-						count++
-					}
-				} else if command == "EXISTS" {
-					if storage.Exists(key) {
-						count++
-					}
+				if storage.Del(key.String()) {
+					count++
 				}
 			}
-			fmt.Fprintln(conn, ":", count)
+			wr.WriteInteger(count)
+
+		case "EXISTS":
+			if len(args) < 1 {
+				wr.WriteError(fmt.Errorf("ERR wrong number of arguments for 'EXISTS' command"))
+				continue
+			}
+			count := 0
+			for _, key := range args {
+				if storage.Exists(key.String()) {
+					count++
+				}
+			}
+			wr.WriteInteger(count)
 
 		case "QUIT":
-			fmt.Fprintln(conn, "+OK")
+			wr.WriteSimpleString("OK")
 			return
 
 		default:
-			fmt.Fprintf(conn, "-ERR unknown command '%s'\n", command)
+			wr.WriteError(fmt.Errorf("ERR unknown command '%s'", cmdName))
 		}
 	}
 }
