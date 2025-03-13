@@ -2,6 +2,7 @@ package router
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"strconv"
 	"strings"
@@ -18,19 +19,23 @@ func HandleConnection(conn net.Conn, storage *arithmo.Storage) {
 	for {
 		val, _, err := rd.ReadValue()
 		if err != nil {
-			fmt.Println("Erro ao ler comando:", err)
+			if err == io.EOF {
+				fmt.Println("Client disconnected")
+			} else {
+				fmt.Println("Error reading command:", err)
+			}
 			return
 		}
 
 		if val.Type() != resp.Array {
-			wr.WriteError(fmt.Errorf("ERR comando deve ser um array"))
+			wr.WriteError(fmt.Errorf("ERR command must be an array"))
 			continue
 		}
 
 		args := val.Array()
 
 		if len(args) < 1 {
-			wr.WriteError(fmt.Errorf("ERR comando vazio"))
+			wr.WriteError(fmt.Errorf("ERR empty command"))
 			continue
 		}
 
