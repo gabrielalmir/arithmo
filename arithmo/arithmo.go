@@ -10,11 +10,11 @@ type Storage struct {
 	items sync.Map
 }
 
-func (s *Storage) Set(key string, value interface{}) {
+func (s *Storage) Set(key string, value any) {
 	s.items.Store(key, value)
 }
 
-func (s *Storage) Get(key string) (interface{}, bool) {
+func (s *Storage) Get(key string) (any, bool) {
 	val, ok := s.items.Load(key)
 	if !ok {
 		return nil, false
